@@ -23,18 +23,37 @@ jobs:
         with:
           gradle-version: 8.9
 
-      - name: Preparar projeto (extrai o zip se necessário)
+      - name: Preparar projeto (localiza e extrai o projeto/zip em qualquer lugar do repo)
         id: prep
         run: |
-          if [ -f "app/build.gradle.kts" ]; then
-            echo "dir=." >> "$GITHUB_OUTPUT"
-          elif [ -f "DeviceLink.zip" ]; then
-            unzip -o DeviceLink.zip -d .
-            echo "dir=DeviceLink" >> "$GITHUB_OUTPUT"
-          else
-            echo "Não encontrei o projeto."
-            exit 1
+          set -e
+
+          GRADLE_FILE=$(find . -maxdepth 5 -type f -path "*/app/build.gradle.kts" | head -n 1 || true)
+          if [ -n "$GRADLE_FILE" ]; then
+            DIR=$(dirname "$(dirname "$GRADLE_FILE")")
+            echo "Projeto encontrado em: $DIR"
+            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          ZIP_FILE=$(find . -maxdepth 5 -type f -iname "*.zip" | head -n 1 || true)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Zip encontrado em: $ZIP_FILE"
+            mkdir -p /tmp/extracted
+            unzip -o "$ZIP_FILE" -d /tmp/extracted
+            GRADLE_FILE=$(find /tmp/extracted -maxdepth 5 -type f -path "*/app/build.gradle.kts" | head -n 1 || true)
+            if [ -n "$GRADLE_FILE" ]; then
+              DIR=$(dirname "$(dirname "$GRADLE_FILE")")
+              echo "Projeto encontrado dentro do zip em: $DIR"
+              echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "Não encontrei app/build.gradle.kts em nenhum lugar do repositório nem dentro de um .zip."
+          echo "Conteúdo do repositório:"
+          find . -maxdepth 4 -not -path "*/.git/*"
+          exit 1
 
       - name: Compilar APK de debug
         working-directory: ${{ steps.prep.outputs.dir }}
